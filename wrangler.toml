@@ -1,0 +1,8 @@
+name = "poktik"
+main = "src/index.js"
+compatibility_date = "2026-11-22"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "poktig"
+database_id = "446b7040-6151-436f-9fd6-c9f2770cf4ea"
