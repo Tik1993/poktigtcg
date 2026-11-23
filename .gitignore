@@ -2,3 +2,5 @@
 data/
 node_modules/
 poktig.db
+fetch_price/urls.json
+fetch_price/prices.sql
