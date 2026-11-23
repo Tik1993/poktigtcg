@@ -50,7 +50,10 @@ async function overview(env) {
 async function grid(env) {
   const { results } = await env.DB.prepare(
     `SELECT c.card_id, c.series_no, c.card_name, c.version, c.image_file,
-            CASE WHEN uc.card_id IS NOT NULL THEN 1 ELSE 0 END AS owned
+            CASE WHEN uc.card_id IS NOT NULL THEN 1 ELSE 0 END AS owned,
+            (SELECT price_usd FROM prices
+             WHERE card_id = c.card_id
+             ORDER BY recorded_at DESC LIMIT 1) AS price_usd
      FROM cards c
      LEFT JOIN user_cards uc
        ON uc.card_id = c.card_id
@@ -64,7 +67,9 @@ async function grid(env) {
     .map((r) => {
       const cls = r.owned ? "cell owned" : "cell missing";
       const img = `${R2_URL}/jp-base-set/${r.image_file}`;
-      return `<a class="${cls}" href="/card/${r.card_id}"><img src="${img}" alt="${r.card_name}" loading="lazy">${r.series_no}<br>${r.card_name}<br><small>${r.version}</small></a>`;
+      const price =
+        r.price_usd === null ? "No price yet" : `$${r.price_usd.toFixed(2)}`;
+      return `<a class="${cls}" href="/card/${r.card_id}"><img src="${img}" alt="${r.card_name}" loading="lazy">${r.series_no}<br>${r.card_name}<br><small>${r.version}</small><br>${price}</a>`;
     })
     .join("");
 
@@ -84,7 +89,7 @@ async function grid(env) {
 async function cardDetail(env, cardId) {
   const row = await env.DB.prepare(
     `SELECT c.card_id, c.series_no, c.card_name, c.card_type, c.rarity, c.version,
-            c.pricecharting_url, c.image_file, c.market_price_usd,
+            c.pricecharting_url, c.image_file,
             CASE WHEN uc.card_id IS NOT NULL THEN 1 ELSE 0 END AS owned,
             uc.quantity, uc.acquired_date
      FROM cards c
@@ -100,13 +105,22 @@ async function cardDetail(env, cardId) {
     return new Response("Card not found", { status: 404 });
   }
 
+  const latest = await env.DB.prepare(
+    `SELECT price_usd, recorded_at FROM prices
+     WHERE card_id = ? ORDER BY recorded_at DESC LIMIT 1`,
+  )
+    .bind(cardId)
+    .first();
+
   let ownedLine = "Not owned";
   if (row.owned) {
     ownedLine = `Own ${row.quantity}`;
     if (row.acquired_date) ownedLine += `, bought ${row.acquired_date}`;
   }
   const priceLine =
-    row.market_price_usd === null ? "No price yet" : `$${row.market_price_usd}`;
+    latest === null
+      ? "No price yet"
+      : `$${latest.price_usd.toFixed(2)} (as of ${latest.recorded_at})`;
   const img = `${R2_URL}/jp-base-set/${row.image_file}`;
   const imgCls = row.owned ? "" : "grey";
 
