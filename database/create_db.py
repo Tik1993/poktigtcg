@@ -47,6 +47,20 @@ db.execute("""
     )
 """)
 
+db.execute("""
+    CREATE TABLE IF NOT EXISTS prices(
+        price_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_id TEXT NOT NULL REFERENCES cards(card_id),
+        price_usd REAL NOT NULL,
+        source TEXT NOT NULL,
+        recorded_at TEXT NOT NULL
+    )
+""")
+db.execute("""
+    CREATE INDEX IF NOT EXISTS idx_prices_card_time ON prices(card_id, recorded_at)
+""")
+
+
 db.commit()
 
 tables = db.execute(
