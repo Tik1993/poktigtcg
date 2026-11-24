@@ -7,8 +7,9 @@ export default {
     if (url.pathname === "/") {
       return overview(env);
     }
-    if (url.pathname === "/pokedex/jp-base-set") {
-      return grid(env);
+    if (url.pathname.startsWith("/pokedex/")) {
+      const setId = url.pathname.slice("/pokedex/".length);
+      return grid(env, setId);
     }
     if (url.pathname === "/about") {
       return about(env);
@@ -47,7 +48,15 @@ async function overview(env) {
   );
 }
 
-async function grid(env) {
+async function grid(env, setId) {
+  const set = await env.DB.prepare(`SELECT name FROM sets WHERE set_id = ?`)
+    .bind(setId)
+    .first();
+
+  if (!set) {
+    return new Response("Set not found", { status: 404 });
+  }
+
   const { results } = await env.DB.prepare(
     `SELECT c.card_id, c.series_no, c.card_name, c.version, c.image_file,
             CASE WHEN uc.card_id IS NOT NULL THEN 1 ELSE 0 END AS owned,
@@ -58,15 +67,17 @@ async function grid(env) {
      LEFT JOIN user_cards uc
        ON uc.card_id = c.card_id
       AND uc.user_id = 'ernest'
-     WHERE c.set_id = 'jp-base-set'
+     WHERE c.set_id = ?
      ORDER BY c.series_no,
               CASE WHEN c.version = 'Normal' THEN 0 ELSE 1 END`,
-  ).all();
+  )
+    .bind(setId)
+    .all();
 
   const cells = results
     .map((r) => {
       const cls = r.owned ? "cell owned" : "cell missing";
-      const img = `${R2_URL}/jp-base-set/${r.image_file}`;
+      const img = `${R2_URL}/${setId}/${r.image_file}`;
       const price =
         r.price_usd === null ? "No price yet" : `$${r.price_usd.toFixed(2)}`;
       return `<a class="${cls}" href="/card/${r.card_id}"><img src="${img}" alt="${r.card_name}" loading="lazy">${r.series_no}<br>${r.card_name}<br><small>${r.version}</small><br>${price}</a>`;
@@ -81,18 +92,19 @@ async function grid(env) {
       .cell.owned { background: #fff7d6; border-color: #e0a800; }
       .cell.missing { background: #eee; }
       .cell.missing img { filter: grayscale(1); }
-    </style></head><body><h1>Base Set</h1><p><a href="/">← PokTik TCG</a> · <a href="/about">About Me</a></p><div class="grid">${cells}</div></body></html>`,
+    </style></head><body><h1>${set.name}</h1><p><a href="/">← PokTik TCG</a> · <a href="/about">About Me</a></p><div class="grid">${cells}</div></body></html>`,
     { headers: { "Content-Type": "text/html; charset=utf-8" } },
   );
 }
 
 async function cardDetail(env, cardId) {
   const row = await env.DB.prepare(
-    `SELECT c.card_id, c.series_no, c.card_name, c.card_type, c.rarity, c.version,
-            c.pricecharting_url, c.image_file,
+    `SELECT c.card_id, c.set_id, c.series_no, c.card_name, c.card_type, c.rarity, c.version,
+            c.pricecharting_url, c.image_file, s.name AS set_name,
             CASE WHEN uc.card_id IS NOT NULL THEN 1 ELSE 0 END AS owned,
             uc.quantity, uc.acquired_date
      FROM cards c
+     JOIN sets s ON s.set_id = c.set_id
      LEFT JOIN user_cards uc
        ON uc.card_id = c.card_id
       AND uc.user_id = 'ernest'
@@ -121,14 +133,14 @@ async function cardDetail(env, cardId) {
     latest === null
       ? "No price yet"
       : `$${latest.price_usd.toFixed(2)} (as of ${latest.recorded_at})`;
-  const img = `${R2_URL}/jp-base-set/${row.image_file}`;
+  const img = `${R2_URL}/${row.set_id}/${row.image_file}`;
   const imgCls = row.owned ? "" : "grey";
 
   return new Response(
     `<!doctype html><html><head><style>
       .grey { filter: grayscale(1); }
     </style></head><body>
-      <p><a href="/pokedex/jp-base-set">← Back to Base Set</a></p>
+      <p><a href="/pokedex/${row.set_id}">← Back to ${row.set_name}</a></p>
       <h1>${row.series_no} ${row.card_name}</h1>
       <img class="${imgCls}" src="${img}" alt="${row.card_name}" style="max-width: 300px;">
       <p>${row.card_type} · ${row.rarity} · ${row.version}</p>
